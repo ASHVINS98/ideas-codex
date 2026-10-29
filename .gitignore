@@ -1,0 +1,11 @@
+.venv/
+__pycache__/
+*.py[cod]
+.naukri/
+private/
+naukri-session*.json
+profile.json
+reports/
+*.egg-info/
+build/
+dist/

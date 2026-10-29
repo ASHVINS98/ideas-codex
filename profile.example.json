@@ -1,0 +1,11 @@
+{
+  "resume_path": "private/resume.txt",
+  "target_roles": ["Python Developer", "Backend Engineer"],
+  "skills": ["Python", "Django", "SQL", "REST API", "Docker"],
+  "experience_years": 3,
+  "preferred_locations": ["Bengaluru", "Hyderabad"],
+  "allow_remote": true,
+  "exclude_companies": [],
+  "exclude_keywords": ["unpaid", "commission only"],
+  "minimum_score": 75
+}

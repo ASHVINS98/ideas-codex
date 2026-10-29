@@ -1,0 +1,65 @@
+name: Naukri job assistant
+
+on:
+  schedule:
+    # Four times per hour; GitHub may delay scheduled jobs.
+    - cron: '7,22,37,52 * * * *'
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: 'Scan first. Initialize history once before enabling applications.'
+        type: choice
+        required: true
+        default: scan
+        options:
+          - scan
+          - initialize-history
+          - apply
+
+# History writes go ONLY to naukri-application-history, never the source branch.
+permissions:
+  contents: write
+
+concurrency:
+  group: naukri-account
+  cancel-in-progress: false
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    env:
+      TZ: Asia/Kolkata
+      NAUKRI_RUN_MODE: ${{ github.event_name == 'workflow_dispatch' && inputs.mode || (vars.NAUKRI_AUTO_APPLY == 'true' && 'apply' || 'scan') }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+      - name: Install Python dependencies
+        run: python -m pip install -r requirements.txt
+      - name: Install Chromium
+        if: env.NAUKRI_RUN_MODE != 'initialize-history'
+        run: python -m playwright install --with-deps chromium
+      - name: Run one cycle
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          NAUKRI_PROFILE_JSON: ${{ secrets.NAUKRI_PROFILE_JSON }}
+          NAUKRI_RESUME_TEXT: ${{ secrets.NAUKRI_RESUME_TEXT }}
+          NAUKRI_STORAGE_STATE: ${{ secrets.NAUKRI_STORAGE_STATE }}
+        run: python -m naukri_assistant.actions
+      - name: Save matching report
+        if: always() && env.NAUKRI_RUN_MODE != 'initialize-history'
+        uses: actions/upload-artifact@v4
+        with:
+          name: naukri-report-${{ github.run_id }}-${{ github.run_attempt }}
+          path: reports/latest.json
+          if-no-files-found: ignore
+          retention-days: 7
+      - name: Remove private runtime data
+        if: always()
+        run: |
+          python -c "import shutil; shutil.rmtree('.naukri/actions', ignore_errors=True)"

@@ -1,0 +1,4 @@
+SYNTHETIC DEMO RESUME — replace with your own resume for real matching.
+Python Developer with 3 years of experience building backend services using
+Python, Django, SQL, REST API and Docker. Design databases, implement reliable
+services and maintain automated tests for production systems.

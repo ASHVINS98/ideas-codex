@@ -1,0 +1,20 @@
+[
+  {
+    "url": "https://www.naukri.com/job-listings-python-developer-example-010126000001",
+    "title": "Python Developer",
+    "company": "Example Company (synthetic test data)",
+    "location": "Bengaluru",
+    "description": "Python Developer building backend services with Django, SQL, REST API and Docker. Design databases, implement reliable services and maintain automated tests for production systems.",
+    "min_experience": 2,
+    "max_experience": 5
+  },
+  {
+    "url": "https://www.naukri.com/job-listings-senior-backend-engineer-example-010126000002",
+    "title": "Senior Backend Engineer",
+    "company": "Another Example Company (synthetic test data)",
+    "location": "Hyderabad",
+    "description": "Build backend services with Python, Django, SQL, REST API and Docker. Lead architecture, mentor developers and maintain databases and automated tests for production systems.",
+    "min_experience": 8,
+    "max_experience": 12
+  }
+]
