@@ -5,6 +5,7 @@ import shutil
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 from naukri_assistant.browser import AccountActionRequired, browser_session
 
@@ -40,8 +41,56 @@ class BrowserSmokeTests(unittest.TestCase):
                 browser.application_button().click()
                 self.assertTrue(browser.confirm_application())
                 browser.page.set_content("<body>Verify you are human</body>")
-                with self.assertRaises(AccountActionRequired):
-                    browser.guard()
+                with patch("builtins.input") as prompt:
+                    with self.assertRaises(AccountActionRequired):
+                        browser.guard()
+                    prompt.assert_not_called()
+
+    def test_interactive_verification_keeps_page_open_and_resumes_search(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            with browser_session(Path(temporary), headless=True, executable=shutil.which("chromium")) as browser:
+                # Test a manual action against intercepted pages; no real CAPTCHA
+                # is solved and no external page is requested.
+                browser.interactive = True
+                completed = False
+                def respond(route):
+                    challenged = "python-developer-jobs" in route.request.url and not completed
+                    route.fulfill(status=200, content_type="text/html", body="<body>Verify you are human</body>" if challenged else HTML)
+                browser.context.route("**/*", respond)
+                browser.authenticate()
+                def complete_check(_message):
+                    nonlocal completed
+                    self.assertFalse(browser.page.is_closed())
+                    self.assertIn("Verify you are human", browser.page.locator("body").inner_text())
+                    completed = True
+                    # A real login can redirect away from the requested search.
+                    browser.page.goto("https://www.naukri.com/mnjuser/homepage")
+                    return ""
+                with patch("builtins.input", side_effect=complete_check) as prompt:
+                    links = browser.search(["Python Developer"], 3, ["Bengaluru"], 1)
+                    self.assertEqual(links, [URL])
+                    prompt.assert_called_once()
+                    self.assertIn("python-developer-jobs", browser.page.url)
+
+    def test_interactive_check_must_clear_before_scan_can_continue(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            with browser_session(Path(temporary), headless=True, executable=shutil.which("chromium")) as browser:
+                browser.context.route("**/*", lambda route: route.fulfill(status=200, content_type="text/html", body=HTML))
+                browser.authenticate()
+                browser.interactive = True
+                for text in ("Verify you are human", "Access Denied"):
+                    with self.subTest(text=text):
+                        browser.page.set_content(f"<body>{text}</body>")
+                        with patch("builtins.input", return_value="") as prompt:
+                            with self.assertRaisesRegex(AccountActionRequired, "still required"):
+                                browser.guard()
+                            prompt.assert_called_once()
+
+    def test_interactive_launch_rejects_hidden_browser(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            with self.assertRaisesRegex(ValueError, "visible browser"):
+                with browser_session(Path(temporary), headless=True, interactive=True):
+                    self.fail("An invisible browser cannot be used for manual checks")
 
     def test_session_export_and_import_on_fresh_browser(self):
         with tempfile.TemporaryDirectory() as temporary:

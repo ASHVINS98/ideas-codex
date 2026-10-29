@@ -73,6 +73,15 @@ class AssistantTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             read_report(path, self.profile)
 
+    def test_interactive_scan_rejects_headless_or_ci_before_opening_browser(self):
+        cases = [(["scan", "--interactive", "--headless"], {"GITHUB_ACTIONS": "false"}),
+                 (["scan", "--interactive"], {"GITHUB_ACTIONS": "true"})]
+        for command, environment in cases:
+            with self.subTest(command=command), patch.dict("os.environ", environment):
+                with patch("naukri_assistant.__main__.browser_session") as browser:
+                    self.assertEqual(main(command), 1)
+                    browser.assert_not_called()
+
     def history(self):
         history = History(Path(self.temp.name) / "history.sqlite")
         self.addCleanup(history.close)

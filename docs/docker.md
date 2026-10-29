@@ -76,12 +76,24 @@ password in project files.
 ## 5. Scan and review matches first
 
 ```cmd
-docker compose exec desktop python -m naukri_assistant scan --headless
+docker compose exec desktop python -m naukri_assistant scan --interactive
 ```
 
 Open `reports/latest.json` on your Windows computer and inspect the matches and
 scores. This command submits no applications. Docker setup tests do not prove that
 Naukri currently accepts automation or that the live UI selectors still work.
+
+Interactive scans keep Chromium visible in the viewer. If Naukri requests a
+security check or login, the terminal pauses while you complete it yourself in
+the viewer. Press Enter only after the verification is complete. The script
+checks the page again and stops if the check remains. Ctrl+C closes the scan.
+An **Access Denied** page may have no verification option; stop in that case.
+The tool does not bypass an access denial, solve CAPTCHAs, or guarantee that
+Naukri will permit subsequent automated access.
+
+For an unattended scan you can use `scan --headless`, but it stops immediately on
+verification. Do not combine `--interactive` with `--headless`. The background
+worker and GitHub Actions retain that behavior and never wait for manual input.
 
 ## 6. Start automatic applications every 15 minutes
 
@@ -102,6 +114,10 @@ restarted. Inspect `docker compose ps -a` and `docker compose logs worker` for t
 outcome. To refresh your login, first stop the worker, repeat step 4, then start it
 again. Do not run this Docker worker and GitHub Actions applications for the same
 account: the local and remote histories are separate.
+
+If a visible scan succeeds but the headless worker repeatedly requests verification,
+leave the worker stopped. Completing one check does not establish that Naukri
+accepts unattended applications from this browser.
 
 ## Stop and restart
 

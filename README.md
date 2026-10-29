@@ -72,6 +72,12 @@ exclusion reasons and manual-review requirements. By default it inspects up to 3
 listings across the first search page for each target role. `--pages 2` and
 `--max-jobs 50` expand that scope. Results are not an exhaustive survey of Naukri.
 
+For local scans that need manual verification, use `scan --interactive`. Chromium
+stays visible and the terminal waits while you complete any available Naukri check
+yourself. Press Enter after completion, or Ctrl+C if the page denies access without
+offering a check. This mode cannot be combined with `--headless` or used in GitHub
+Actions. Background runs still stop when verification is required.
+
 To submit qualifying jobs from a recent report:
 
 ```bash

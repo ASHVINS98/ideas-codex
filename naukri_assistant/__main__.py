@@ -143,6 +143,8 @@ def parser():
             command.add_argument("--output", type=Path, default=Path("private/naukri-session.json"))
         if name in {"scan", "apply", "watch", "export-session"}:
             command.add_argument("--headless", action="store_true")
+        if name == "scan":
+            command.add_argument("--interactive", action="store_true", help="Keep a visible browser open for manual login/security checks; scan only")
         if name in {"scan", "watch"}:
             command.add_argument("--pages", type=bounded_int(1, 3), default=1, help="Search pages per role")
             command.add_argument("--max-jobs", type=bounded_int(1, 100), default=30)
@@ -163,6 +165,8 @@ def main(argv=None):
     args = parser().parse_args(argv)
     history = None
     try:
+        if getattr(args, "interactive", False) and (args.headless or os.environ.get("GITHUB_ACTIONS") == "true"):
+            raise ValueError("Interactive scans require a visible local browser; omit --headless and run outside GitHub Actions")
         if args.command == "rank":
             profile = Profile.load(args.profile)
             jobs = [Job.from_dict(item) for item in json.loads(args.jobs.read_text(encoding="utf-8"))]
@@ -200,7 +204,7 @@ def main(argv=None):
                     print(f"Private session exported to {args.output}. Store it as a GitHub Actions secret, never as a repository file.")
             else:
                 profile = Profile.load(args.profile)
-                with browser_session(args.state_dir, args.headless, args.browser, args.storage_state) as browser:
+                with browser_session(args.state_dir, args.headless, args.browser, args.storage_state, interactive=getattr(args, "interactive", False)) as browser:
                     browser.authenticate()
                     if args.command == "scan":
                         save_report(args.output, profile, scan(browser, profile, args))

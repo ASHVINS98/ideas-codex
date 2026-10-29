@@ -91,7 +91,9 @@ def parse_job(data: dict, url: str) -> Job:
 
 
 @contextmanager
-def browser_session(state_dir: Path, headless: bool = False, executable: str | None = None, storage_state: Path | None = None):
+def browser_session(state_dir: Path, headless: bool = False, executable: str | None = None, storage_state: Path | None = None, interactive: bool = False):
+    if interactive and headless:
+        raise ValueError("Interactive verification requires a visible browser; omit --headless")
     from playwright.sync_api import sync_playwright
     state_dir.mkdir(parents=True, exist_ok=True, mode=0o700)
     with sync_playwright() as driver:
@@ -113,7 +115,7 @@ def browser_session(state_dir: Path, headless: bool = False, executable: str | N
             context = driver.chromium.launch_persistent_context(str((state_dir / "browser").resolve()), accept_downloads=False, **options)
         context.set_default_timeout(15000)
         try:
-            yield NaukriBrowser(context)
+            yield NaukriBrowser(context, interactive=interactive)
         finally:
             context.close()
             if browser:
@@ -121,29 +123,55 @@ def browser_session(state_dir: Path, headless: bool = False, executable: str | N
 
 
 class NaukriBrowser:
-    def __init__(self, context):
+    def __init__(self, context, interactive: bool = False):
         self.context = context
         self.page = context.pages[0] if context.pages else context.new_page()
+        self.interactive = interactive
 
-    def guard(self):
+    def blocking_reason(self):
         host = urlsplit(self.page.url).hostname
         if host not in {"naukri.com", "www.naukri.com"}:
             raise AccountActionRequired("Navigation left Naukri; complete this job manually")
         text = self.page.locator("body").inner_text()[:6000]
-        if re.search(r"access denied|verify (?:that )?you are human|unusual traffic|complete the captcha|security verification", text, re.I):
-            raise AccountActionRequired("Naukri requires a security check. Stop and resolve it manually; no bypass is attempted")
+        if re.search(r"access denied", text, re.I):
+            return "Naukri denied access to this browser. An access denial may not offer a manual verification option"
+        if re.search(r"verify (?:that )?you are human|unusual traffic|complete the captcha|security verification", text, re.I):
+            return "Naukri requires a security check"
         for iframe in self.page.locator('iframe[src*="captcha"]').all():
             if iframe.is_visible():
-                raise AccountActionRequired("A CAPTCHA is visible. Resolve it manually before restarting")
+                return "A CAPTCHA is visible"
         if "/nlogin/" in self.page.url or self.page.locator('input[type="password"]:visible').count():
-            raise AccountActionRequired("Naukri login expired. Run the login command again")
+            return "Naukri login expired"
+        return None
+
+    def guard(self, resume_url: str | None = None) -> bool:
+        reason = self.blocking_reason()
+        if reason is None:
+            return False
+        if not self.interactive:
+            raise AccountActionRequired(reason + ". Stop and resolve it manually; a local scan --interactive keeps the visible browser open")
+        print(reason + ". The browser is staying open for your manual inspection.", flush=True)
+        input("Complete any available verification or login in the browser viewer. If access is denied with no verification option, press Ctrl+C to stop. After completing the check, press Enter here: ")
+        remaining = self.blocking_reason()
+        if remaining is not None:
+            raise AccountActionRequired(remaining + ". Verification is still required; the scan has stopped")
+        if resume_url is not None and self.page.url != resume_url:
+            # Manual login can redirect to the homepage. Return to the requested
+            # read-only listing/search once after the user completes verification.
+            self.page.goto(resume_url, wait_until="domcontentloaded")
+            self.page.wait_for_timeout(1200)
+            remaining = self.blocking_reason()
+            if remaining is not None:
+                raise AccountActionRequired(remaining + ". The requested page is still unavailable; the scan has stopped")
+        return True
 
     def authenticate(self):
-        self.page.goto("https://www.naukri.com/mnjuser/homepage", wait_until="domcontentloaded")
-        self.guard()
+        homepage = "https://www.naukri.com/mnjuser/homepage"
+        self.page.goto(homepage, wait_until="domcontentloaded")
+        self.guard(resume_url=homepage)
         # A profile link is positive evidence of a logged-in session; the URL alone is not.
         self.page.locator('a[href*="/mnjuser/profile"], a[href*="/mnjuser/homepage"]').first.wait_for(state="attached")
-        self.guard()
+        self.guard(resume_url=homepage)
 
     def login(self):
         self.page.goto("https://www.naukri.com/nlogin/login", wait_until="domcontentloaded")
@@ -175,18 +203,21 @@ class NaukriBrowser:
                 if locations:
                     query["l"] = ", ".join(locations)
                 suffix = f"-{number}" if number > 1 else ""
-                self.page.goto(f"https://www.naukri.com/{quote(slug)}-jobs{suffix}?{urlencode(query)}", wait_until="domcontentloaded")
+                target = f"https://www.naukri.com/{quote(slug)}-jobs{suffix}?{urlencode(query)}"
+                self.page.goto(target, wait_until="domcontentloaded")
                 self.page.wait_for_timeout(1200)
-                self.guard()
+                self.guard(resume_url=target)
                 locator = self.page.locator('a[href*="/job-listings-"]')
                 if not locator.count():
                     try:
                         locator.first.wait_for(state="attached", timeout=10000)
                     except Exception as error:
-                        self.guard()
-                        if re.search(r"no (?:jobs|results)|couldn't find", self.page.locator("body").inner_text(), re.I):
+                        if self.guard(resume_url=target):
+                            locator.first.wait_for(state="attached", timeout=10000)
+                        elif re.search(r"no (?:jobs|results)|couldn't find", self.page.locator("body").inner_text(), re.I):
                             break
-                        raise RuntimeError("No job links found; Naukri may have changed its page layout") from error
+                        else:
+                            raise RuntimeError("No job links found; Naukri may have changed its page layout") from error
                 for href in locator.evaluate_all("elements => elements.map(el => el.href)"):
                     try:
                         clean = job_url(href)
@@ -199,7 +230,7 @@ class NaukriBrowser:
         clean = job_url(url)
         self.page.goto(clean, wait_until="domcontentloaded")
         self.page.wait_for_timeout(1200)
-        self.guard()
+        self.guard(resume_url=clean)
         data = self.page.evaluate("""() => {
             const first = selectors => {
                 for (const selector of selectors) {
