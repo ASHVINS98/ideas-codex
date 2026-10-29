@@ -79,8 +79,10 @@ password in project files.
 docker compose exec desktop python -m naukri_assistant scan --interactive
 ```
 
-Open `reports/latest.json` on your Windows computer and inspect the matches and
-scores. This command submits no applications. Docker setup tests do not prove that
+Open `reports/latest.json` on your Windows computer. Its `jobs` list contains only
+`eligible: true` matches, ordered by score. `summary` counts scanned and eligible
+jobs, while rejected-job reasons remain in terminal output. If nothing qualifies,
+`jobs` is empty. This command submits no applications. Docker setup tests do not prove that
 Naukri currently accepts automation or that the live UI selectors still work.
 
 Interactive scans keep Chromium visible in the viewer. If Naukri requests a
@@ -91,8 +93,25 @@ An **Access Denied** page may have no verification option; stop in that case.
 The tool does not bypass an access denial, solve CAPTCHAs, or guarantee that
 Naukri will permit subsequent automated access.
 
+To apply to the eligible jobs in this report, with the viewer open and the worker
+stopped, run:
+
+```cmd
+docker compose exec desktop python -m naukri_assistant apply --interactive --report reports/latest.json --limit 3 --daily-limit 20
+```
+
+This attempts real applications, up to three per invocation. Each job is re-read
+and scored before Apply, and previously attempted jobs are skipped. If a security
+check appears, complete it yourself in the viewer and press Enter in the terminal.
+Only a visible success confirmation counts as applied. If confirmation has not
+appeared, interactive apply keeps the browser open while you answer recruiter
+questions yourself, then checks again after you press Enter. It never generates
+or fills those answers. External flows remain manual. A report older than 24 hours or from a different
+profile/resume requires another scan. An empty eligible list submits nothing.
+
 For an unattended scan you can use `scan --headless`, but it stops immediately on
-verification. Do not combine `--interactive` with `--headless`. The background
+verification. Do not combine `--interactive` with `--headless`, for scanning or
+applying. The background
 worker and GitHub Actions retain that behavior and never wait for manual input.
 
 ## 6. Start automatic applications every 15 minutes

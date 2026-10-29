@@ -67,8 +67,10 @@ Use a separate `--state-dir` for each account and keep it unchanged between runs
 python -m naukri_assistant scan
 ```
 
-This does not apply. It writes `reports/latest.json` with scores, matched keywords,
-exclusion reasons and manual-review requirements. By default it inspects up to 30
+This does not apply. It writes `reports/latest.json` with **only `eligible: true`
+jobs**, their scores and matched keywords. The summary counts all scanned jobs;
+exclusion and manual-review reasons remain in terminal output. If nothing qualifies,
+the JSON contains `"jobs": []`. By default it inspects up to 30
 listings across the first search page for each target role. `--pages 2` and
 `--max-jobs 50` expand that scope. Results are not an exhaustive survey of Naukri.
 
@@ -81,8 +83,15 @@ Actions. Background runs still stop when verification is required.
 To submit qualifying jobs from a recent report:
 
 ```bash
-python -m naukri_assistant apply --limit 3 --daily-limit 20
+python -m naukri_assistant apply --interactive --limit 3 --daily-limit 20
 ```
+
+This submits applications; it rechecks each listing before applying and retains
+duplicate protection. Keep the visible browser open for any manual security
+verification. `--interactive` also works for `apply` and cannot be combined with
+`--headless` or used in GitHub Actions. Reports must be less than 24 hours old and
+match your current profile/resume. Re-scan after changing those files. Extra
+recruiter questionnaires and external application flows still need manual completion.
 
 ## Automate every 15 minutes
 

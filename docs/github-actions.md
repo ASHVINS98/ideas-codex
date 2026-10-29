@@ -56,8 +56,9 @@ Open **Actions → Naukri job assistant → Run workflow**, select the default b
 choose mode **scan**, and run it.
 
 Check the logs and download its `naukri-report-…` artifact to inspect
-`reports/latest.json`. Verify the jobs, scores and exclusion reasons against your
-real profile before enabling applications. Artifacts contain job matches and skill
+`reports/latest.json`. Its `jobs` list contains only eligible matches; summary counts
+cover all scanned jobs, and rejection reasons remain in the workflow log. Verify
+jobs and scores against your real profile before enabling applications. Artifacts contain job matches and skill
 keywords, but no raw resume or browser session. Reports expire after seven days.
 
 Once secrets are configured, scheduled scan-only runs occur at minutes

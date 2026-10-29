@@ -262,12 +262,20 @@ class NaukriBrowser:
 
     def confirm_application(self) -> bool:
         confirmation = self.page.get_by_text(re.compile(r"^(?:you have (?:been )?)?successfully applied(?:\b.*)?$|^application (?:has been )?submitted(?: successfully)?[.!]?$", re.I))
-        try:
-            confirmation.first.wait_for(state="visible", timeout=12000)
+        for attempt in range(2):
+            try:
+                confirmation.first.wait_for(state="visible", timeout=12000)
+            except Exception:
+                completed = self.guard()
+                if self.interactive and attempt == 0 and not completed:
+                    input("No success confirmation yet. Complete any recruiter questions yourself in the browser, then press Enter here to check the result. Press Ctrl+C to stop: ")
+                    self.guard()
+                    completed = True
+                if completed and attempt == 0:
+                    # A manual check after Apply may reveal the confirmation.
+                    # Recheck the result without clicking Apply a second time.
+                    continue
+                return False
             self.guard()
-            return True
-        except AccountActionRequired:
-            raise
-        except Exception:
-            self.guard()
-            return False
+            return confirmation.first.is_visible()
+        return False

@@ -6,8 +6,8 @@ from pathlib import Path
 from unittest.mock import patch, MagicMock
 from argparse import Namespace
 
-from naukri_assistant.__main__ import apply_rows, main, read_report, run_watch
-from naukri_assistant.browser import experience_range, parse_job
+from naukri_assistant.__main__ import apply_rows, main, read_report, run_watch, save_report
+from naukri_assistant.browser import NaukriBrowser, experience_range, parse_job
 from naukri_assistant.history import History
 from naukri_assistant.matching import Job, Profile, contains, job_url, rank, score
 
@@ -66,16 +66,76 @@ class AssistantTests(unittest.TestCase):
         path = Path(self.temp.name) / "report.json"
         result = main(["rank", "--profile", str(ROOT / "examples/profile.json"), "--jobs", str(ROOT / "examples/jobs.json"), "--output", str(path)])
         self.assertEqual(result, 0)
-        self.assertEqual(len(read_report(path, self.profile)), 2)
+        self.assertEqual(len(read_report(path, self.profile)), 1)
         payload = json.loads(path.read_text())
+        self.assertEqual(payload["summary"], {"scanned": 2, "eligible": 1})
+        self.assertTrue(all(row["eligible"] is True for row in payload["jobs"]))
         payload["profile_fingerprint"] = "changed"
         path.write_text(json.dumps(payload))
         with self.assertRaises(ValueError):
             read_report(path, self.profile)
 
+    def test_empty_eligible_report_does_not_open_browser_or_apply(self):
+        path = Path(self.temp.name) / "empty.json"
+        excluded = replace(self.job, min_experience=8, max_experience=12)
+        save_report(path, self.profile, rank([excluded], self.profile))
+        self.assertEqual(json.loads(path.read_text())["jobs"], [])
+        with patch.dict("os.environ", {"GITHUB_ACTIONS": "false"}):
+            with patch("naukri_assistant.__main__.browser_session") as browser:
+                self.assertEqual(main(["apply", "--profile", str(ROOT / "examples/profile.json"), "--state-dir", self.temp.name, "--report", str(path), "--interactive"]), 0)
+                browser.assert_not_called()
+
+    @patch("naukri_assistant.__main__.time.sleep")
+    def test_cli_applies_eligible_report_interactively_and_persists_history(self, _sleep):
+        path = Path(self.temp.name) / "eligible.json"
+        save_report(path, self.profile, rank([self.job], self.profile))
+        browser = self.fake_browser()
+        browser.authenticate = MagicMock()
+        command = ["apply", "--profile", str(ROOT / "examples/profile.json"), "--state-dir", self.temp.name, "--report", str(path), "--interactive", "--limit", "1"]
+        with patch.dict("os.environ", {"GITHUB_ACTIONS": "false"}):
+            with patch("naukri_assistant.__main__.browser_session") as session:
+                session.return_value.__enter__.return_value = browser
+                self.assertEqual(main(command), 0)
+                self.assertTrue(session.call_args.kwargs["interactive"])
+                self.assertEqual(main(command), 0)
+        self.assertEqual(browser.button.clicks, 1)
+        history = self.history()
+        self.assertEqual(history.rows()[0][2], "applied")
+
+    def test_confirmation_rechecks_after_manual_verification_without_resubmitting(self):
+        context = MagicMock()
+        page = context.pages[0]
+        confirmation = page.get_by_text.return_value.first
+        confirmation.wait_for.side_effect = [TimeoutError("verification needed"), None]
+        confirmation.is_visible.return_value = True
+        browser = NaukriBrowser(context, interactive=True)
+        with patch.object(browser, "guard", side_effect=[True, False]):
+            self.assertTrue(browser.confirm_application())
+        self.assertEqual(confirmation.wait_for.call_count, 2)
+        page.get_by_role.assert_not_called()
+
+    def test_interactive_confirmation_waits_for_manual_questionnaire(self):
+        context = MagicMock()
+        confirmation = context.pages[0].get_by_text.return_value.first
+        confirmation.wait_for.side_effect = [TimeoutError("questionnaire open"), None]
+        confirmation.is_visible.return_value = True
+        browser = NaukriBrowser(context, interactive=True)
+        with patch.object(browser, "guard", return_value=False), patch("builtins.input", return_value="") as prompt:
+            self.assertTrue(browser.confirm_application())
+            prompt.assert_called_once()
+        context.pages[0].get_by_role.assert_not_called()
+
+    def test_background_confirmation_never_prompts_for_questionnaire(self):
+        context = MagicMock()
+        context.pages[0].get_by_text.return_value.first.wait_for.side_effect = TimeoutError("questionnaire open")
+        browser = NaukriBrowser(context)
+        with patch.object(browser, "guard", return_value=False), patch("builtins.input") as prompt:
+            self.assertFalse(browser.confirm_application())
+            prompt.assert_not_called()
+
     def test_interactive_scan_rejects_headless_or_ci_before_opening_browser(self):
-        cases = [(["scan", "--interactive", "--headless"], {"GITHUB_ACTIONS": "false"}),
-                 (["scan", "--interactive"], {"GITHUB_ACTIONS": "true"})]
+        cases = [([command, "--interactive", "--headless"], {"GITHUB_ACTIONS": "false"}) for command in ("scan", "apply")]
+        cases += [([command, "--interactive"], {"GITHUB_ACTIONS": "true"}) for command in ("scan", "apply")]
         for command, environment in cases:
             with self.subTest(command=command), patch.dict("os.environ", environment):
                 with patch("naukri_assistant.__main__.browser_session") as browser:
