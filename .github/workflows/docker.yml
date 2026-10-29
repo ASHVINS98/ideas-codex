@@ -1,0 +1,56 @@
+name: Docker tests
+
+on:
+  push:
+    branches-ignore: [naukri-application-history]
+    paths:
+      - Dockerfile
+      - .dockerignore
+      - compose.yaml
+      - docker/**
+      - naukri_assistant/**
+      - requirements.txt
+      - tests/**
+      - .github/workflows/docker.yml
+  pull_request:
+    paths:
+      - Dockerfile
+      - .dockerignore
+      - compose.yaml
+      - docker/**
+      - naukri_assistant/**
+      - requirements.txt
+      - tests/**
+      - .github/workflows/docker.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  docker:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Build image
+        run: docker build -t naukri-assistant:local .
+      - name: Run unit and browser tests inside the image
+        run: docker run --rm --shm-size=1g --entrypoint python naukri-assistant:local -m unittest discover -s tests -v
+      - name: Test viewer and create synthetic persistent state
+        run: |
+          docker run -d --name naukri-docker-smoke --shm-size=1g -e VNC_PASSWORD=fixture8 -v naukri-docker-smoke-state:/state naukri-assistant:local
+          docker exec -e PYTHONPATH=/app naukri-docker-smoke python docker/smoke.py seed
+          docker stop naukri-docker-smoke
+          docker rm naukri-docker-smoke
+      - name: Test state survives a new container
+        run: |
+          docker run -d --name naukri-docker-smoke --shm-size=1g -e VNC_PASSWORD=fixture8 -v naukri-docker-smoke-state:/state naukri-assistant:local
+          docker exec -e PYTHONPATH=/app naukri-docker-smoke python docker/smoke.py verify
+      - name: Remove synthetic test resources
+        if: always()
+        run: |
+          docker rm -f naukri-docker-smoke || true
+          docker volume rm naukri-docker-smoke-state || true

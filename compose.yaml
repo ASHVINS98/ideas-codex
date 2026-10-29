@@ -1,0 +1,56 @@
+name: naukri-assistant
+
+x-common: &common
+  image: naukri-assistant:local
+  build: .
+  shm_size: 1gb
+  volumes:
+    - type: bind
+      source: ./profile.json
+      target: /app/profile.json
+      read_only: true
+      bind:
+        create_host_path: false
+    - type: bind
+      source: ./private
+      target: /app/private
+      read_only: true
+      bind:
+        create_host_path: false
+    - type: bind
+      source: ./reports
+      target: /app/reports
+      bind:
+        create_host_path: false
+    - type: volume
+      source: naukri-state
+      target: /state
+
+services:
+  desktop:
+    <<: *common
+    command: [desktop]
+    ports:
+      # The desktop is accessible only from this computer, not your LAN.
+      - '127.0.0.1:6080:6080'
+    environment:
+      VNC_PASSWORD: ${VNC_PASSWORD:?Create .env and set an 8-character VNC_PASSWORD first}
+    healthcheck:
+      test: [CMD, python, -c, "import http.client; c=http.client.HTTPConnection('127.0.0.1',6080,timeout=3); c.request('GET','/vnc.html'); assert c.getresponse().status==200"]
+      interval: 15s
+      timeout: 5s
+      start_period: 10s
+      retries: 3
+    stop_grace_period: 20s
+
+  worker:
+    <<: *common
+    profiles: [automation]
+    # This worker is started only by the explicit --profile automation command.
+    command: [watch, --apply, --headless, --interval-minutes, '15', --limit, '3', --daily-limit, '20']
+    # Login/CAPTCHA errors must stop automation rather than create a restart loop.
+    restart: 'no'
+    stop_grace_period: 30s
+
+volumes:
+  naukri-state:

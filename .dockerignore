@@ -1,0 +1,13 @@
+# Allowlist: personal files and Git credentials never enter the build context.
+**
+!Dockerfile
+!requirements.txt
+!naukri_assistant/
+!naukri_assistant/*.py
+!examples/
+!examples/*.json
+!examples/resume.txt
+!tests/
+!tests/*.py
+!docker/
+!docker/*.py

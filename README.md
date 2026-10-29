@@ -6,6 +6,9 @@ This is an initial implementation: **Naukri's current UI and real submissions ha
 not been validated with a logged-in account.** Matching and application-control
 tests use synthetic data; they do not prove compatibility with the live website.
 
+**Windows with Docker Desktop:** follow [Docker setup](docs/docker.md) for a local
+browser viewer, saved sessions and background automation, without installing Python.
+
 For scheduled cloud runs without keeping your computer on, follow
 [GitHub Actions setup](docs/github-actions.md). It starts in scan-only mode and
 supports a durable remote application ledger before automatic applications.

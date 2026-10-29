@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import signal
 import sqlite3
 import sys
 import time
@@ -128,8 +129,8 @@ def parser():
     commands = root.add_subparsers(dest="command", required=True)
     common = argparse.ArgumentParser(add_help=False)
     common.add_argument("--profile", type=Path, default=Path("profile.json"))
-    common.add_argument("--state-dir", type=Path, default=Path(".naukri"), help="Use a different state directory for each account")
-    common.add_argument("--browser", help="Optional Chromium executable path")
+    common.add_argument("--state-dir", type=Path, default=Path(os.environ.get("NAUKRI_STATE_DIR", ".naukri")), help="Use a different state directory for each account")
+    common.add_argument("--browser", default=os.environ.get("NAUKRI_BROWSER"), help="Optional Chromium executable path")
     common.add_argument("--storage-state", type=Path, help="Import a private Playwright session JSON, e.g. on GitHub Actions")
     common.add_argument("--github-history", action="store_true", help="Use durable history via GITHUB_REPOSITORY and GITHUB_TOKEN")
     for name in ("login", "export-session", "init-github-history", "rank", "scan", "apply", "watch", "history"):
@@ -223,4 +224,9 @@ def main(argv=None):
 
 
 if __name__ == "__main__":
+    def stop_on_signal(_signum, _frame):
+        # Docker stop sends SIGTERM: unwind browser contexts and release profile
+        # locks before the container exits, preserving the reusable session.
+        raise KeyboardInterrupt
+    signal.signal(signal.SIGTERM, stop_on_signal)
     raise SystemExit(main())
